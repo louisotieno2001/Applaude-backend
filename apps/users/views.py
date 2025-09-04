@@ -8,6 +8,9 @@ from rest_framework_simplejwt.views import (
 from .serializers import UserCreateSerializer, UserDetailSerializer
 from django_ratelimit.decorators import ratelimit
 from django.utils.decorators import method_decorator
+import logging
+
+logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
@@ -21,6 +24,16 @@ class UserRegistrationView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = [permissions.AllowAny]
     serializer_class = UserCreateSerializer
+
+    def create(self, request, *args, **kwargs):
+        logger.info(f"Registration attempt for email: {request.data.get('email')}")
+        try:
+            response = super().create(request, *args, **kwargs)
+            logger.info(f"Registration successful for email: {request.data.get('email')}")
+            return response
+        except Exception as e:
+            logger.error(f"Registration failed for email: {request.data.get('email')}, Error: {str(e)}")
+            raise
 
 class UserProfileView(generics.RetrieveUpdateAPIView):
     """
