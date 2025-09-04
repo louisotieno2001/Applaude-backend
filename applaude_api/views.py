@@ -1,7 +1,12 @@
+# views.py
 from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.conf import settings
 
+@csrf_exempt
 def health_check(request):
-    """
-    Simple health check endpoint for Elastic Beanstalk.
-    """
-    return JsonResponse({"status": "ok"})
+    return JsonResponse({
+        'status': 'healthy',
+        'service': 'Django Backend',
+        'debug': settings.DEBUG
+    })

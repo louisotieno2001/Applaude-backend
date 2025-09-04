@@ -4,15 +4,24 @@ from datetime import timedelta
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+# Get Render URL from environment variable
+RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-default-development-key')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DEBUG', 'True').lower() in ('true', '1', 't')
+DEBUG = os.environ.get('DEBUG', 'False').lower() in ('false', '1', 'f')
 
-ALLOWED_HOSTS = ['yourdomain.com', 'www.yourdomain.com', '127.0.0.1', 'localhost', '.onrender.com']
+ALLOWED_HOSTS = ['applaude-backend-x4p6.onrender.com', 'www.applaude-backend-x4p6.onrender.com', '127.0.0.1', 'localhost', '.onrender.com']
+
+if RENDER_EXTERNAL_HOSTNAME:
+    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
+else:
+    # For local development
+    ALLOWED_HOSTS.extend(['localhost', '127.0.0.1'])
 
 # Application definition
 
@@ -197,3 +206,12 @@ CACHES = {
 
 # django-ratelimit configuration - use default Redis cache for rate limiting
 RATELIMIT_USE_CACHE = 'default'
+
+# For API endpoints, you might want to disable CSRF
+CSRF_TRUSTED_ORIGINS = [
+    'https://vite-react-one-sable-18.vercel.app',
+    'https://applaude-backend-x4p6.onrender.com',
+]
+
+# Or disable CSRF for API routes (use cautiously)
+# CSRF_COOKIE_SECURE = False

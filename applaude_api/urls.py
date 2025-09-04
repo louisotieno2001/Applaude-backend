@@ -1,13 +1,15 @@
 from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
+from . import views
 from django.conf.urls.static import static
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 from .views import health_check # Import the new view
 
 urlpatterns = [
     # Health Check
-    path('health/', health_check, name='health_check'),
+    path('api/health/', views.health_check, name='health_check'),
+    path('api/data/', views.api_data, name='api_data'),
 
     # Admin
     path('admin/', admin.site.urls),
