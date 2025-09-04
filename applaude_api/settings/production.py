@@ -15,7 +15,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:3000",
     "https://applaude-backend-x4p6.onrender.com",
     "https://vite-react-git-main-louisotieno2001s-projects.vercel.app",
-    "https://vite-react-18rjwwr33-louisotieno2001s-projects.vercel.app/",
+    "https://vite-react-18rjwwr33-louisotieno2001s-projects.vercel.app",
 ]
 
 # Allow all origins if explicitly set in environment

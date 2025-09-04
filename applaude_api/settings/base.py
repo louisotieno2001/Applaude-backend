@@ -161,6 +161,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "https://vite-react-one-sable-18.vercel.app",
+    "https://vite-react-git-main-louisotieno2001s-projects.vercel.app",
+    "https://vite-react-18rjwwr33-louisotieno2001s-projects.vercel.app",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
