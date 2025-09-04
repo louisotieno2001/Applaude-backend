@@ -1,13 +1,14 @@
 # backend/applaude_api/settings/production.py
 from .base import *
 import os
+import dj_database_url
 
 DEBUG = False
 
-# Secrets are loaded from environment variables set by Elastic Beanstalk
-SECRET_KEY = os.environ['DJANGO_SECRET_KEY']
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
-CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
+# Secrets are loaded from environment variables set by Render
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'fallback-secret-key-change-in-production')
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', 'https://vite-react-one-sable-18.vercel.app').split(',')
 
 # --- PRODUCTION SECURITY SETTINGS ---
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
@@ -19,16 +20,13 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 
 # --- DATABASE CONFIGURATION ---
-# Database URL is provided by Elastic Beanstalk environment properties
+# Use DATABASE_URL provided by Render (supports PostgreSQL)
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': os.environ['DB_NAME'],
-        'USER': os.environ['DB_USER'],
-        'PASSWORD': os.environ['DB_PASSWORD'],
-        'HOST': os.environ['DB_HOST'],
-        'PORT': os.environ['DB_PORT'],
-    }
+    'default': dj_database_url.config(
+        default=os.environ.get('DATABASE_URL', 'sqlite:///db.sqlite3'),
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
 }
 
 # --- Redis for Celery ---
