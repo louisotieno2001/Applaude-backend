@@ -7,8 +7,9 @@ DEBUG = False
 
 # Secrets are loaded from environment variables set by Render
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'fallback-secret-key-change-in-production')
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,.onrender.com').split(',')
 CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', 'https://vite-react-one-sable-18.vercel.app').split(',')
+CORS_ALLOW_ALL_ORIGINS = os.environ.get('CORS_ALLOW_ALL_ORIGINS', 'False').lower() in ('true', '1', 't')
 
 # --- PRODUCTION SECURITY SETTINGS ---
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
