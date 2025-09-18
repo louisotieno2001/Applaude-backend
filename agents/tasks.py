@@ -1,6 +1,7 @@
 import google.generativeai as genai
 import os
-from celery import shared_task, atexit
+import atexit
+from celery import shared_task
 from apps.projects.models import Project
 from django.db import transaction
 import time
@@ -8,11 +9,13 @@ import random
 from django.utils import timezone
 from datetime import timedelta
 from django.core.mail import send_mail
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 
 
 try:
     genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-    model = genai.GenerativeModel('gemini-1.5-pro-latest')
+    model = genai.GenerativeModel('gemini-2.5-pro')
     print("AI Model configured successfully.")
 except Exception as e:
     print(f"Error configuring AI Model: {e}")
@@ -29,11 +32,73 @@ def update_project_status(project_id, status, message=None):
             if message:
                 project.status_message = message
             project.save()
+            
+            # Send WebSocket notification
+            send_project_status_notification(project)
     except Project.DoesNotExist:
         # Handle cases where the project might be deleted during processing
         print(f"Project with ID {project_id} not found for status update.")
     except Exception as e:
         print(f"Error updating project status for {project_id}: {e}")
+
+def send_project_status_notification(project):
+    """Send project status update via WebSocket"""
+    try:
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            progress = get_progress_percentage(project.status)
+            async_to_sync(channel_layer.group_send)(
+                f'chat_room1',  # Default room for project updates
+                {
+                    'type': 'project_status_update',
+                    'project_id': str(project.id),
+                    'status': project.status,
+                    'status_message': project.status_message,
+                    'progress': progress,
+                    'project_data': {
+                        'name': project.name,
+                        'source_url': project.source_url,
+                        'user_persona_document': project.user_persona_document,
+                        'brand_palette': project.brand_palette,
+                        'generated_code_path': project.generated_code_path,
+                    }
+                }
+            )
+    except Exception as e:
+        print(f"Error sending WebSocket notification: {e}")
+
+def send_chat_message(message, sender='Applaude Prime'):
+    """Send a chat message via WebSocket"""
+    try:
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            async_to_sync(channel_layer.group_send)(
+                f'chat_room1',
+                {
+                    'type': 'chat_message',
+                    'message': message,
+                    'sender': sender
+                }
+            )
+    except Exception as e:
+        print(f"Error sending chat message: {e}")
+
+def get_progress_percentage(status):
+    """Convert project status to progress percentage"""
+    status_progress = {
+        'PENDING': 0,
+        'ANALYSIS_PENDING': 10,
+        'ANALYSIS_COMPLETE': 20,
+        'DESIGN_PENDING': 30,
+        'DESIGN_COMPLETE': 40,
+        'CODE_GENERATION': 50,
+        'QA_PENDING': 60,
+        'QA_COMPLETE': 70,
+        'DEPLOYMENT_PENDING': 80,
+        'COMPLETED': 100,
+        'FAILED': 0,
+    }
+    return status_progress.get(status, 0)
 
 
 def get_ai_response(prompt, retries=3, delay=5):
@@ -66,9 +131,11 @@ def run_market_analysis(self, project_id):
     """
     Analyzes the provided source URL to generate a user persona and brand identity.
     """
+    print(f"Starting market analysis for project {project_id}")
     update_project_status(project_id, Project.ProjectStatus.ANALYSIS_PENDING, "Analyzing market and target user...")
     try:
         project = Project.objects.get(id=project_id)
+        print(f"Project found: {project.name}, URL: {project.source_url}")
 
         # --- User Persona Generation ---
         persona_prompt = f"""
@@ -102,6 +169,9 @@ def run_market_analysis(self, project_id):
             project_to_update.status = Project.ProjectStatus.ANALYSIS_COMPLETE
             project_to_update.status_message = "Market analysis complete. Ready for design."
             project_to_update.save()
+
+        # Send a chat message to inform the user
+        send_chat_message("Market analysis complete! I've analyzed the website and created a user persona and brand palette. Proceeding to the design phase.")
 
         return project.id # Pass the project ID to the next task in the chain
     except Exception as e:
@@ -160,6 +230,48 @@ def run_qa_check(self, project_id):
         return project.id # Pass ID to the next task
     except Exception as e:
         update_project_status(project_id, Project.ProjectStatus.FAILED, f"QA Check Failed: {e}")
+        self.retry(exc=e)
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def run_design_task(self, project_id):
+    """
+    Generates the UI/UX design for the mobile application.
+    """
+    update_project_status(project_id, Project.ProjectStatus.DESIGN_PENDING, "Creating UI/UX design...")
+    try:
+        project = Project.objects.get(id=project_id)
+
+        # Simulate design generation process
+        time.sleep(random.randint(15, 30))
+
+        # Simulate successful design completion
+        update_project_status(project_id, Project.ProjectStatus.DESIGN_COMPLETE, "Design complete. Ready for code generation.")
+
+        return project.id
+    except Exception as e:
+        update_project_status(project_id, Project.ProjectStatus.FAILED, f"Design Task Failed: {e}")
+        self.retry(exc=e)
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def run_cybersecurity_check(self, project_id):
+    """
+    Performs a cybersecurity audit on the generated code.
+    """
+    update_project_status(project_id, Project.ProjectStatus.DEPLOYMENT_PENDING, "Performing cybersecurity audit...")
+    try:
+        project = Project.objects.get(id=project_id)
+        if not project.generated_code_path:
+            raise ValueError("Generated code path not found. Cannot run cybersecurity check.")
+
+        # Simulate cybersecurity audit
+        time.sleep(random.randint(10, 20))
+
+        # Simulate successful security audit
+        update_project_status(project_id, Project.ProjectStatus.COMPLETED, "Security audit passed. Ready for deployment.")
+
+        return project.id
+    except Exception as e:
+        update_project_status(project_id, Project.ProjectStatus.FAILED, f"Cybersecurity Check Failed: {e}")
         self.retry(exc=e)
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)

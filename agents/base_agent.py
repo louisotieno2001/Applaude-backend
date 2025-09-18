@@ -22,7 +22,7 @@ class BaseAgent(ABC):
         if not self.gemini_api_key:
             raise ValueError("GEMINI_API_KEY not found in environment variables.")
         genai.configure(api_key=self.gemini_api_key)
-        self.model = genai.GenerativeModel('gemini-pro')
+        self.model = genai.GenerativeModel('gemini-2.5-pro')
 
     @abstractmethod
     def execute(self, *args, **kwargs):

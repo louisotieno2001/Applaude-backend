@@ -16,7 +16,7 @@ class CodeGenAgent(BaseAgent):
             agent_persona=CODE_GEN_PERSONA,
             goal=CODE_GEN_GOAL
         )
-        self.model = genai.GenerativeModel(model_name='google/gemini-pro-2.5-experimental')
+        self.model = genai.GenerativeModel(model_name='google/gemini-2.5-pro')
 
     def execute(self, project_id: int):
         """

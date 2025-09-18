@@ -1,9 +1,13 @@
 import os
 from pathlib import Path
 from datetime import timedelta
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+# Load environment variables from .env file
+load_dotenv(BASE_DIR / '.env')
 # Get Render URL from environment variable
 RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
 
@@ -208,6 +212,16 @@ CACHES = {
 
 # django-ratelimit configuration - use default Redis cache for rate limiting
 RATELIMIT_USE_CACHE = 'default'
+
+# Django Channels Configuration
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/1")],
+        },
+    },
+}
 
 # For API endpoints, you might want to disable CSRF
 CSRF_TRUSTED_ORIGINS = [

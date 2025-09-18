@@ -16,7 +16,7 @@ class MarketAnalystAgent(BaseAgent):
             agent_persona=MARKET_ANALYST_PERSONA,
             goal=MARKET_ANALYST_GOAL
         )
-        self.model = genai.GenerativeModel('gemini-1.5-pro') # Using a more capable model for prompt engineering
+        self.model = genai.GenerativeModel('gemini-2.5-pro') # Using a more capable model for prompt engineering
 
     def execute(self, project_id: int):
         """
