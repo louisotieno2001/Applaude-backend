@@ -103,3 +103,8 @@ wcwidth==0.2.13
 webencodings==0.5.1
 whitenoise==6.7.0
 zope.interface==7.2
+# Anthropic AI packages
+anthropic==0.40.0
+# Vertex AI packages
+google-cloud-aiplatform==1.70.0
+vertexai==1.70.0

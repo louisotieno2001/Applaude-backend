@@ -31,6 +31,7 @@ class ProjectSerializer(serializers.ModelSerializer):
             'user_persona_document',
             'brand_palette',
             'generated_code_path',
+            'deployment_option',
             'created_at',
             'updated_at'
         )

@@ -9,6 +9,12 @@ class Project(models.Model):
         IOS = 'IOS', _('iOS')
         BOTH = 'BOTH', _('Both')
 
+    class DeploymentOption(models.TextChoices):
+        NOT_CHOSEN = 'NOT_CHOSEN', _('Not Chosen')
+        AMAZON_S3 = 'AMAZON_S3', _('Amazon S3')
+        GOOGLE_PLAY = 'GOOGLE_PLAY', _('Google Play Store')
+        APP_STORE = 'APP_STORE', _('Apple App Store')
+
     class ProjectStatus(models.TextChoices):
         PENDING = 'PENDING', _('Pending')
         ANALYSIS_PENDING = 'ANALYSIS_PENDING', _('Analysis Pending')
@@ -32,6 +38,7 @@ class Project(models.Model):
     user_persona_document = models.TextField(blank=True, null=True)
     brand_palette = models.JSONField(blank=True, null=True)
     generated_code_path = models.CharField(max_length=1024, blank=True, null=True)
+    deployment_option = models.CharField(max_length=20, choices=DeploymentOption.choices, default=DeploymentOption.NOT_CHOSEN)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

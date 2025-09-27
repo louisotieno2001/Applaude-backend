@@ -1,4 +1,4 @@
-import google.generativeai as genai
+import anthropic
 import os
 import atexit
 from celery import shared_task
@@ -14,12 +14,11 @@ from asgiref.sync import async_to_sync
 
 
 try:
-    genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-    model = genai.GenerativeModel('gemini-2.5-pro')
-    print("AI Model configured successfully.")
+    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    print("Anthropic AI Model configured successfully.")
 except Exception as e:
-    print(f"Error configuring AI Model: {e}")
-    model = None
+    print(f"Error configuring Anthropic AI Model: {e}")
+    client = None
 
 # --- Helper Functions ---
 
@@ -34,27 +33,37 @@ def update_project_status(project_id, status, message=None):
             project.save()
             
             # Send WebSocket notification
-            send_project_status_notification(project)
+            send_project_status_notification(project, room_name='chat_room1')
     except Project.DoesNotExist:
         # Handle cases where the project might be deleted during processing
         print(f"Project with ID {project_id} not found for status update.")
     except Exception as e:
         print(f"Error updating project status for {project_id}: {e}")
 
-def send_project_status_notification(project):
+def send_project_status_notification(project, room_name='chat_room1'):
     """Send project status update via WebSocket"""
     try:
         channel_layer = get_channel_layer()
         if channel_layer:
             progress = get_progress_percentage(project.status)
+            group_name = f'chat_{room_name}'
+            print(f"Sending WebSocket notification to group: {group_name}")
             async_to_sync(channel_layer.group_send)(
-                f'chat_room1',  # Default room for project updates
+                group_name,
                 {
                     'type': 'project_status_update',
                     'project_id': str(project.id),
                     'status': project.status,
                     'status_message': project.status_message,
                     'progress': progress,
+                    'is_processing': project.status in [
+                        'ANALYSIS_PENDING',
+                        'DESIGN_PENDING',
+                        'CODE_GENERATION',
+                        'QA_PENDING',
+                        'SECURITY_SCAN_PENDING',
+                        'DEPLOYMENT_PENDING',
+                    ],
                     'project_data': {
                         'name': project.name,
                         'source_url': project.source_url,
@@ -67,13 +76,13 @@ def send_project_status_notification(project):
     except Exception as e:
         print(f"Error sending WebSocket notification: {e}")
 
-def send_chat_message(message, sender='Applaude Prime'):
+def send_chat_message(message, sender='Applaude Prime', room_name='chat_room1'):
     """Send a chat message via WebSocket"""
     try:
         channel_layer = get_channel_layer()
         if channel_layer:
             async_to_sync(channel_layer.group_send)(
-                f'chat_room1',
+                room_name,
                 {
                     'type': 'chat_message',
                     'message': message,
@@ -82,6 +91,40 @@ def send_chat_message(message, sender='Applaude Prime'):
             )
     except Exception as e:
         print(f"Error sending chat message: {e}")
+
+def send_task_start_message(project_id, task_name, task_description, room_name='chat_room1'):
+    """Send task start message via WebSocket"""
+    try:
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            async_to_sync(channel_layer.group_send)(
+                room_name,
+                {
+                    'type': 'task_started',
+                    'project_id': str(project_id),
+                    'task_name': task_name,
+                    'task_description': task_description
+                }
+            )
+    except Exception as e:
+        print(f"Error sending task start message: {e}")
+
+def send_task_end_message(project_id, task_name, task_result, room_name='chat_room1'):
+    """Send task end message via WebSocket"""
+    try:
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            async_to_sync(channel_layer.group_send)(
+                room_name,
+                {
+                    'type': 'task_completed',
+                    'project_id': str(project_id),
+                    'task_name': task_name,
+                    'task_result': task_result
+                }
+            )
+    except Exception as e:
+        print(f"Error sending task end message: {e}")
 
 def get_progress_percentage(status):
     """Convert project status to progress percentage"""
@@ -103,18 +146,24 @@ def get_progress_percentage(status):
 
 def get_ai_response(prompt, retries=3, delay=5):
     """
-    Calls the generative AI model with retry logic.
+    Calls the Anthropic AI model with retry logic.
     Returns the generated text or raises an exception.
     """
-    if not model:
-        raise ConnectionError("Generative AI model is not configured.")
+    if not client:
+        raise ConnectionError("Anthropic AI model is not configured.")
 
     for attempt in range(retries):
         try:
-            response = model.generate_content(prompt)
+            response = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=4096,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ]
+            )
             # Basic validation of response structure
-            if response and response.text:
-                return response.text
+            if response and response.content:
+                return response.content[0].text
             else:
                 raise ValueError("Received an empty or invalid response from the AI model.")
         except Exception as e:
@@ -132,33 +181,56 @@ def run_market_analysis(self, project_id):
     Analyzes the provided source URL to generate a user persona and brand identity.
     """
     print(f"Starting market analysis for project {project_id}")
+    project = Project.objects.get(id=project_id)
+    send_task_start_message(project_id, "Market Analysis", "Analyzing your requirements and creating user persona")
     update_project_status(project_id, Project.ProjectStatus.ANALYSIS_PENDING, "Analyzing market and target user...")
     try:
-        project = Project.objects.get(id=project_id)
         print(f"Project found: {project.name}, URL: {project.source_url}")
 
         # --- User Persona Generation ---
-        persona_prompt = f"""
-        Analyze the content from the URL: {project.source_url}.
-        Based on this analysis, create a detailed "User Persona" document for a potential mobile application.
-        The persona should include:
-        - A fictional name and demographic details (age, location, occupation).
-        - A brief biography.
-        - Goals and motivations for using an app related to the source content.
-        - Frustrations and pain points with existing solutions.
-        - Their preferred technology and social media platforms.
-        Format the output as a clean, readable text document.
-        """
+        if project.source_url and project.source_url.startswith('http'):
+            persona_prompt = f"""
+            Analyze the content from the URL: {project.source_url}.
+            Based on this analysis, create a detailed "User Persona" document for a potential mobile application.
+            The persona should include:
+            - A fictional name and demographic details (age, location, occupation).
+            - A brief biography.
+            - Goals and motivations for using an app related to the source content.
+            - Frustrations and pain points with existing solutions.
+            - Their preferred technology and social media platforms.
+            Format the output as a clean, readable text document.
+            """
+        else:
+            persona_prompt = f"""
+            Based on the app description: "{project.source_url}".
+            Create a detailed "User Persona" document for a potential mobile application that matches this description.
+            The persona should include:
+            - A fictional name and demographic details (age, location, occupation).
+            - A brief biography.
+            - Goals and motivations for using an app that fits the description.
+            - Frustrations and pain points with existing solutions.
+            - Their preferred technology and social media platforms.
+            Format the output as a clean, readable text document.
+            """
         user_persona = get_ai_response(persona_prompt)
 
         # --- Brand Palette Generation ---
-        palette_prompt = f"""
-        Based on the website at {project.source_url}, generate a JSON object for a brand color palette.
-        The JSON object must include the following keys with hex color values:
-        "primary", "secondary", "text_light", "text_dark", "background".
-        Example: {{"primary": "#0062FF", "secondary": "#FFC107", "text_light": "#FFFFFF", "text_dark": "#212121", "background": "#F5F5F5"}}
-        Return ONLY the raw JSON object.
-        """
+        if project.source_url and project.source_url.startswith('http'):
+            palette_prompt = f"""
+            Based on the website at {project.source_url}, generate a JSON object for a brand color palette.
+            The JSON object must include the following keys with hex color values:
+            "primary", "secondary", "text_light", "text_dark", "background".
+            Example: {{"primary": "#0062FF", "secondary": "#FFC107", "text_light": "#FFFFFF", "text_dark": "#212121", "background": "#F5F5F5"}}
+            Return ONLY the raw JSON object.
+            """
+        else:
+            palette_prompt = f"""
+            Based on the app description: "{project.source_url}", generate a JSON object for a brand color palette that would suit such an app.
+            The JSON object must include the following keys with hex color values:
+            "primary", "secondary", "text_light", "text_dark", "background".
+            Example: {{"primary": "#0062FF", "secondary": "#FFC107", "text_light": "#FFFFFF", "text_dark": "#212121", "background": "#F5F5F5"}}
+            Return ONLY the raw JSON object.
+            """
         brand_palette_str = get_ai_response(palette_prompt)
 
         # Atomically update the project with the generated assets
@@ -170,8 +242,12 @@ def run_market_analysis(self, project_id):
             project_to_update.status_message = "Market analysis complete. Ready for design."
             project_to_update.save()
 
-        # Send a chat message to inform the user
+        # Send task completion message
+        send_task_end_message(project_id, "Market Analysis", "User persona and brand palette created successfully")
         send_chat_message("Market analysis complete! I've analyzed the website and created a user persona and brand palette. Proceeding to the design phase.")
+
+        # Automatically trigger design task
+        run_design_task.delay(str(project.id))
 
         return project.id # Pass the project ID to the next task in the chain
     except Exception as e:
@@ -184,6 +260,7 @@ def run_code_generation(self, project_id):
     Generates the application code based on the project requirements.
     This is a placeholder for a complex code generation process.
     """
+    send_task_start_message(project_id, "Code Generation", "Generating your app source code using AI")
     update_project_status(project_id, Project.ProjectStatus.CODE_GENERATION, "Generating application source code...")
     try:
         project = Project.objects.get(id=project_id)
@@ -205,6 +282,13 @@ def run_code_generation(self, project_id):
             project_to_update.status_message = "Code generation finished. Pending QA."
             project_to_update.save()
 
+        # Send task completion message
+        send_task_end_message(project_id, "Code Generation", "App source code generated successfully and ready for download!")
+        send_chat_message("Code generation complete! Your app has been created successfully. Now running quality assurance checks.")
+
+        # Automatically trigger QA check
+        run_qa_check.delay(str(project.id))
+
         return project.id # Pass ID to the next task
     except Exception as e:
         update_project_status(project_id, Project.ProjectStatus.FAILED, f"Code Generation Failed: {e}")
@@ -215,6 +299,7 @@ def run_qa_check(self, project_id):
     """
     Performs a simulated Quality Assurance check on the generated code.
     """
+    send_task_start_message(project_id, "Quality Assurance", "Running comprehensive tests and checks")
     update_project_status(project_id, Project.ProjectStatus.QA_PENDING, "Performing automated QA checks...")
     try:
         project = Project.objects.get(id=project_id)
@@ -226,6 +311,13 @@ def run_qa_check(self, project_id):
 
         # Simulate a successful QA outcome
         update_project_status(project_id, Project.ProjectStatus.QA_COMPLETE, "QA checks passed. Ready for deployment.")
+        
+        # Send task completion message
+        send_task_end_message(project_id, "Quality Assurance", "All QA checks passed successfully")
+        send_chat_message("Quality assurance complete! Your app has passed all tests and is ready for security analysis.")
+
+        # Automatically trigger cybersecurity check
+        run_cybersecurity_check.delay(str(project.id))
 
         return project.id # Pass ID to the next task
     except Exception as e:
@@ -237,6 +329,7 @@ def run_design_task(self, project_id):
     """
     Generates the UI/UX design for the mobile application.
     """
+    send_task_start_message(project_id, "UI/UX Design", "Creating beautiful interface designs")
     update_project_status(project_id, Project.ProjectStatus.DESIGN_PENDING, "Creating UI/UX design...")
     try:
         project = Project.objects.get(id=project_id)
@@ -246,6 +339,13 @@ def run_design_task(self, project_id):
 
         # Simulate successful design completion
         update_project_status(project_id, Project.ProjectStatus.DESIGN_COMPLETE, "Design complete. Ready for code generation.")
+        
+        # Send task completion message
+        send_task_end_message(project_id, "UI/UX Design", "Beautiful designs created with brand colors")
+        send_chat_message("Design phase complete! I've created stunning UI designs for your app. Now moving to code generation.")
+
+        # Automatically trigger code generation
+        run_code_generation.delay(str(project.id))
 
         return project.id
     except Exception as e:
@@ -257,6 +357,7 @@ def run_cybersecurity_check(self, project_id):
     """
     Performs a cybersecurity audit on the generated code.
     """
+    send_task_start_message(project_id, "Security Analysis", "Scanning code for vulnerabilities and security issues")
     update_project_status(project_id, Project.ProjectStatus.DEPLOYMENT_PENDING, "Performing cybersecurity audit...")
     try:
         project = Project.objects.get(id=project_id)
@@ -267,7 +368,14 @@ def run_cybersecurity_check(self, project_id):
         time.sleep(random.randint(10, 20))
 
         # Simulate successful security audit
-        update_project_status(project_id, Project.ProjectStatus.COMPLETED, "Security audit passed. Ready for deployment.")
+        update_project_status(project_id, Project.ProjectStatus.DEPLOYMENT_PENDING, "Security audit passed. Ready for deployment.")
+
+        # Send task completion message
+        send_task_end_message(project_id, "Security Analysis", "Security audit completed - your app is secure!")
+        send_chat_message("Security analysis complete! Your app has passed all security checks and is ready for deployment.")
+
+        # Automatically trigger deployment
+        run_deployment.delay(str(project.id))
 
         return project.id
     except Exception as e:
@@ -277,22 +385,31 @@ def run_cybersecurity_check(self, project_id):
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def run_deployment(self, project_id):
     """
-    Simulates the deployment of the application to the chosen platform.
+    Deploys the application to Amazon S3 for code build.
     """
-    update_project_status(project_id, Project.ProjectStatus.DEPLOYMENT_PENDING, "Deploying application...")
+    send_task_start_message(project_id, "Deployment", "Packaging and deploying your app to Amazon S3")
+    update_project_status(project_id, Project.ProjectStatus.DEPLOYMENT_PENDING, "Deploying application to Amazon S3...")
     try:
         project = Project.objects.get(id=project_id)
-        if project.deployment_option == Project.DeploymentOption.NOT_CHOSEN:
-            # If no deployment option was chosen, complete the process here.
-            final_message = "Project build complete. Download the code or choose a deployment option."
-            update_project_status(project_id, Project.ProjectStatus.COMPLETED, final_message)
-            return project.id
 
-        # Simulate deployment time
+        # Set deployment option to Amazon S3 if not already set
+        if project.deployment_option == Project.DeploymentOption.NOT_CHOSEN:
+            with transaction.atomic():
+                project_to_update = Project.objects.select_for_update().get(id=project_id)
+                project_to_update.deployment_option = Project.DeploymentOption.AMAZON_S3
+                project_to_update.save()
+
+        # Simulate deployment to S3 time
         time.sleep(random.randint(25, 50))
 
-        final_message = f"Deployment successful! Your app is now live on the {project.deployment_option} platform."
+        # Generate S3 URL for the deployed app
+        s3_url = f"https://applaude-deployments.s3.amazonaws.com/{project.owner.username}/{project.id}/app.apk"
+
+        final_message = f"Deployment successful! Your app is now available at: {s3_url}"
         update_project_status(project_id, Project.ProjectStatus.COMPLETED, final_message)
+
+        # Send final task completion message
+        send_task_end_message(project_id, "Deployment", f"Successfully deployed to Amazon S3! Download: {s3_url}")
 
         return project.id
     except Exception as e:

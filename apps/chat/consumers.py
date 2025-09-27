@@ -6,12 +6,13 @@ from django.contrib.auth.models import AnonymousUser
 from rest_framework_simplejwt.tokens import AccessToken
 from django.contrib.auth import get_user_model
 from agents.applaude_prime_agent import ApplaudePrimeAgent
+from apps.projects.tasks import send_project_status_notification
 from apps.projects.models import Project
 
 class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.room_name = self.scope['url_route']['kwargs']['room_name']
-        self.room_group_name = f'chat_{self.room_name}'
+        self.room_group_name = self.room_name  # Use room_name directly as group name
 
         # User authentication via token in query string
         token_key = self.scope['query_string'].decode().split('=')[1]
@@ -178,4 +179,22 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'status_message': event['status_message'],
             'progress': event['progress'],
             'project_data': event['project_data']
+        }))
+
+    async def task_started(self, event):
+        """Handle task start notifications"""
+        await self.send(text_data=json.dumps({
+            'type': 'task_started',
+            'project_id': event['project_id'],
+            'task_name': event['task_name'],
+            'task_description': event['task_description']
+        }))
+
+    async def task_completed(self, event):
+        """Handle task completion notifications"""
+        await self.send(text_data=json.dumps({
+            'type': 'task_completed',
+            'project_id': event['project_id'],
+            'task_name': event['task_name'],
+            'task_result': event['task_result']
         }))
